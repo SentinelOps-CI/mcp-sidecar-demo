@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "supergateway", "--sse", "https://mcp1.http.cloud.morph.so/mcp1/sse"],
+      "env": {
+        "MORPH_API_KEY": "your-morph-api-key-here"
+      }
+    },
+    "git": {
+      "command": "npx",
+      "args": ["-y", "supergateway", "--sse", "https://mcp2.http.cloud.morph.so/mcp2/sse"],
+      "env": {
+        "MORPH_API_KEY": "your-morph-api-key-here"
+      }
+    },
+    "http": {
+      "command": "npx",
+      "args": ["-y", "supergateway", "--sse", "https://mcp3.http.cloud.morph.so/mcp3/sse"],
+      "env": {
+        "MORPH_API_KEY": "your-morph-api-key-here"
+      }
+    }
+  },
+  "metadata": {
+    "name": "MCP Sidecar Demo - Claude Desktop",
+    "description": "MCP servers behind authenticated sidecar with PERM-UNIFY-R1 policy enforcement",
+    "version": "1.0.0",
+    "created_by": "mcp-sidecar-demo",
+    "epoch": "epoch-1"
+  }
+}

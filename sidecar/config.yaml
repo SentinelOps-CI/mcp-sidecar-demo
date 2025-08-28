@@ -1,0 +1,67 @@
+# Sidecar Configuration
+# Configuration for the MCP permissioning sidecar
+
+# Server configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 60s
+
+# Policy configuration
+policy:
+  file: "/opt/sidecar/policy.yaml"
+  reload_interval: "30s"
+  default_decision: "deny"
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file: "/opt/sidecar/sidecar.log"
+
+# Audit configuration
+audit:
+  enabled: true
+  output_file: "/opt/sidecar/permits.jsonl"
+  include_headers: true
+  include_body: false
+  max_body_size: "1MB"
+
+# MCP server routing
+mcp_servers:
+  filesystem:
+    target: "http://localhost:8000"
+    health_check: "/health"
+    timeout: "10s"
+  
+  git:
+    target: "http://localhost:8001"
+    health_check: "/health"
+    timeout: "10s"
+  
+  http:
+    target: "http://localhost:8002"
+    health_check: "/health"
+    timeout: "10s"
+
+# Authentication
+auth:
+  type: "bearer"
+  header: "Authorization"
+  prefix: "Bearer "
+  required: true
+
+# Metrics and monitoring
+metrics:
+  enabled: true
+  port: 9090
+  path: "/metrics"
+
+# Health check
+health:
+  enabled: true
+  path: "/health"
+  timeout: "5s"
