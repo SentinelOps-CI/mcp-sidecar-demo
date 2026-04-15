@@ -1,8 +1,10 @@
+<div align="center">
+
 # MCP Sidecar Demo
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+**Remote MCP over HTTP, with a policy-aware Go sidecar on Morph Cloud.**
 
-Remote MCP over HTTP, with a policy-aware Go sidecar on Morph Cloud.
+</div>
 
 This repository is a small, end-to-end reference: provision a VM, route three MCP backends through one sidecar, expose authenticated URLs, and ship ready-made client configs. The sidecar enforces YAML policy, writes redacted audit lines, and is covered by the same quality gates you would expect in a production service.
 
