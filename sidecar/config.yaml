@@ -1,5 +1,5 @@
 # Sidecar Configuration
-# Configuration for the MCP permissioning sidecar
+# Configuration for the MCP permissioning sidecar runtime.
 
 # Server configuration
 server:
@@ -13,13 +13,10 @@ server:
 policy:
   file: "/opt/sidecar/policy.yaml"
   reload_interval: "30s"
-  default_decision: "deny"
 
 # Logging configuration
 logging:
   level: "info"
-  format: "json"
-  output: "stdout"
   file: "/opt/sidecar/sidecar.log"
 
 # Audit configuration
@@ -27,8 +24,6 @@ audit:
   enabled: true
   output_file: "/opt/sidecar/permits.jsonl"
   include_headers: true
-  include_body: false
-  max_body_size: "1MB"
 
 # MCP server routing
 mcp_servers:
@@ -52,16 +47,15 @@ auth:
   type: "bearer"
   header: "Authorization"
   prefix: "Bearer "
-  required: true
+  required: false
+  token: ""
 
 # Metrics and monitoring
 metrics:
   enabled: true
-  port: 9090
   path: "/metrics"
 
 # Health check
 health:
   enabled: true
   path: "/health"
-  timeout: "5s"

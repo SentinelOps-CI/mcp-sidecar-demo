@@ -1,345 +1,197 @@
-# MCP Sidecar Demo: "Hello, Remote MCP" on Morph
+# MCP Sidecar Demo
 
-> **Multiple SSE MCP servers behind a permissioning sidecar enforcing PERM-UNIFY-R1 (Call/Read/Write/Grant + epochs + IFC witnesses)**
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[![Morph Cloud](https://img.shields.io/badge/Morph-Cloud-blue)](https://cloud.morph.so)
-[![MCP](https://img.shields.io/badge/MCP-Protocol-green)](https://modelcontextprotocol.io)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+Remote MCP over HTTP, with a policy-aware Go sidecar on Morph Cloud.
 
-## 90-Second Tutorial
+This repository is a small, end-to-end reference: provision a VM, route three MCP backends through one sidecar, expose authenticated URLs, and ship ready-made client configs. The sidecar enforces YAML policy, writes redacted audit lines, and is covered by the same quality gates you would expect in a production service.
 
-### 1. Setup (30 seconds)
-```bash
-# Install dependencies
-make install-deps
+---
 
-# Set your Morph API key
-export MORPH_API_KEY="your-api-key-here"
+## At a glance
 
-# Run the complete demo
-make demo
-```
+| Layer | What you get |
+|-------|----------------|
+| Edge | Morph-exposed HTTP services with API-key authentication |
+| Proxy | Go sidecar: policy checks, reverse proxy, `/health`, `/ready`, `/metrics` |
+| Backends | Filesystem, Git, and HTTP MCP servers on localhost inside the VM |
+| Clients | Generated Cursor and Claude Desktop configs using `supergateway` |
+| Quality | Ruff, mypy, pytest, and Go tests in CI and via `make ci` |
 
-### 2. What Happens (30 seconds)
-- **Morph VM** spins up with MCP devbox
-- **3 MCP servers** install (filesystem, git, http)
-- **Permissioning sidecar** starts with PERM-UNIFY-R1 policy
-- **Authenticated HTTP endpoints** expose via Morph Cloud
-- **Client configs** generate for Claude Desktop & Cursor
+---
 
-### 3. Use It (30 seconds)
-- Copy configs to your MCP clients
-- Connect via supergateway (stdio↔SSE bridge)
-- Enjoy authenticated, policy-enforced MCP access
+## Why this exists
 
-## Scope
+Building remote MCP access is more than exposing a port: you need predictable auth boundaries, a single place to enforce rules, and logs you can trust. This demo keeps the provisioning story in Python (fast iteration) and the dataplane in Go (simple, explicit HTTP handling). Policy and config are validated at startup so the process does not run half-configured.
 
-This demo creates a **production-ready MCP infrastructure** on Morph Cloud:
+**Documentation in this repo:** this file is the main guide. Contributor expectations are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- **Morph VM** with MCP development environment
-- **2-3 MCP servers** (filesystem, git, http)
-- **Authenticated HTTP services** (bearer token auth)
-- **Permissioning sidecar** with policy enforcement
-- **PERM-UNIFY-R1 schema** (roles, tools, epochs, witnesses)
-- **Reverse proxy** with request logging
-- **CERT-V1 records** for audit trails
-- **Ready configs** for Claude Desktop & Cursor
+---
 
 ## Architecture
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Claude/Cursor │    │   Supergateway   │    │  Morph Cloud    │
-│   (MCP Client)  │◄──►│  (stdio↔SSE)     │◄──►│  (HTTP Service) │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                                         │
-                                                         ▼
-                                              ┌──────────────────┐
-                                              │  Permissioning   │
-                                              │    Sidecar       │
-                                              │  (Policy Check)  │
-                                              └──────────────────┘
-                                                         │
-                                                         ▼
-                                              ┌──────────────────┐
-                                              │   MCP Servers    │
-                                              │ ┌─────────────┐  │
-                                              │ │filesystem   │  │
-                                              │ │git          │  │
-                                              │ │http         │  │
-                                              │ └─────────────┘  │
-                                              └──────────────────┘
+```mermaid
+flowchart LR
+  mcpClient[MCPClient] --> supergateway[Supergateway]
+  supergateway --> morphEdge[MorphEdgeAuth]
+  morphEdge --> sidecar[GoSidecar]
+  sidecar --> policy[PolicyYAML]
+  sidecar --> audit[AuditJSONL]
+  sidecar --> metrics[MetricsEndpoint]
+  sidecar --> fsServer[MCPFilesystem]
+  sidecar --> gitServer[MCPGit]
+  sidecar --> httpServer[MCPHTTP]
+  setupPipeline[SetupPipeline] --> sidecar
 ```
 
-## Project Structure
+Clients speak MCP over stdio; `supergateway` bridges to SSE URLs. Morph terminates API-key auth at the edge. The sidecar applies policy, proxies to the right local MCP port, and records decisions.
 
-```
-mcp-sidecar-demo/
-├── setup/
-│   └── setup_mcp.py          # One-liner VM creation & setup
-├── config/
-│   └── policy.yaml            # PERM-UNIFY-R1 policy schema
-├── clients/
-│   ├── claude-desktop.json    # Claude Desktop MCP config
-│   └── cursor.json            # Cursor MCP config
-├── Makefile                   # Easy commands for demo
-├── instance_info.json         # Generated instance details
-└── README.md                  # This file
-```
+---
 
-## Quick Start
+## Repository map
 
-### Prerequisites
-- **Morph Cloud account** ([sign up](https://cloud.morph.so))
-- **Python 3.8+** with pip
-- **Node.js** (for npx/supergateway)
-- **MORPH_API_KEY** environment variable
+| Path | Role |
+|------|------|
+| [setup/setup_mcp.py](setup/setup_mcp.py) | Snapshot, build, deploy sidecar, start services, expose URLs |
+| [sidecar/main.go](sidecar/main.go) | Sidecar: routing, policy, audit, proxy |
+| [sidecar/config.yaml](sidecar/config.yaml) | Runtime config (timeouts, auth, reload interval) |
+| [sidecar/policy.yaml](sidecar/policy.yaml) | Policy shipped with the sidecar build |
+| [tests/](tests/) | Python unit tests (offline) |
+| [sidecar/main_test.go](sidecar/main_test.go) | Go unit tests |
+| [smoke_test.py](smoke_test.py) | Post-deploy smoke checks (requires Morph) |
+| [test_epoch_rotation.py](test_epoch_rotation.py) | Epoch rotation integration test (requires Morph) |
+| [Makefile](Makefile) | Commands: setup, test, logs, `ci`, and more |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml) | Pull request and push checks |
 
-### Installation
+After `make setup`, you will have `instance_info.json` (ignored by git) and refreshed files under `clients/`.
+
+---
+
+## Quickstart
+
 ```bash
-# Clone the repo
-git clone https://github.com/SentinelOps-CI/mcp-sidecar-demo.git
-cd mcp-sidecar-demo
-
-# Install dependencies
 make install-deps
-
-# Set your API key
-export MORPH_API_KEY="your-morph-api-key"
-
-# Run the demo
-make demo
-```
-
-### What You Get
-After running `make demo`, you'll have:
-
-1. **Running Morph VM** with MCP infrastructure
-2. **3 authenticated HTTP endpoints**:
-   - `https://mcp1.http.cloud.morph.so/mcp1/sse`
-   - `https://mcp2.http.cloud.morph.so/mcp2/sse`
-   - `https://mcp3.http.cloud.morph.so/mcp3/sse`
-3. **Client configs** ready for Claude Desktop & Cursor
-4. **Permissioning sidecar** enforcing PERM-UNIFY-R1 policy
-
-## Demo Commands
-
-```bash
-make help           # Show all available commands
-make setup          # Create VM and setup MCP servers
-make test           # Run smoke tests
-make logs           # Show sidecar logs and permits
-make epoch-rotate   # Demonstrate epoch rotation
-make status         # Check instance status
-make clean          # Stop instance and cleanup
-```
-
-## Policy Enforcement
-
-### PERM-UNIFY-R1 Schema
-The sidecar implements a minimal but complete permission schema:
-
-```yaml
-epochs:
-  epoch-1:
-    active: true
-    expires_at: "2025-12-31T23:59:59Z"
-    permissions: [read, write, call, grant]
-
-roles:
-  default:
-    epochs: [epoch-1]
-    tools: [filesystem, git, http]
-    permissions: [read, write, call]
-
-witnesses:
-  sidecar-v1:
-    type: "sidecar"
-    capabilities: [policy_enforcement, request_logging, cert_generation]
-```
-
-### Request Flow
-1. **Client request** → Morph Cloud HTTP service
-2. **Authentication** → Bearer token validation
-3. **Policy check** → Sidecar validates permissions
-4. **Decision** → Allow/deny based on epoch + role
-5. **Logging** → Request logged with CERT-V1 record
-6. **Proxy** → Forward to appropriate MCP server
-
-## Epoch Rotation Demo
-
-See the power of time-based permissions in action:
-
-```bash
-# Run the epoch rotation demo
-make epoch-rotate
-```
-
-**What happens:**
-1. **Start**: Access allowed with `epoch-1` (active)
-2. **Rotate**: Switch to `epoch-2` (inactive)
-3. **Result**: Access denied (epoch inactive)
-4. **Activate**: Enable `epoch-2`
-5. **Success**: Access restored with new epoch
-
-**Output example:**
-```
-🔄 Demonstrating epoch rotation...
-Current epoch: epoch-1 (active)
-Testing access...
-
-🔄 Rotating to epoch-2...
-✅ Epoch rotated to epoch-2
-Testing access with new epoch...
-
-🎉 Epoch rotation demo completed!
-```
-
-## Monitoring & Logs
-
-### View Sidecar Activity
-```bash
-make logs
-```
-
-**Shows:**
-- Sidecar logs (policy decisions)
-- Request permits (JSONL format)
-- MCP server logs
-- CERT-V1 audit records
-
-### Sample Log Output
-```json
-{
-  "timestamp": "2025-01-20T10:30:00Z",
-  "request_id": "req-1705750200000000000",
-  "method": "GET",
-  "path": "/mcp1/sse",
-  "client_ip": "192.168.1.100",
-  "decision": "permitted",
-  "epoch": "epoch-1",
-  "witness": "sidecar-v1",
-  "cert_record": "CERT-V1:permitted:epoch-1:2025-01-20T10:30:00Z"
-}
-```
-
-## Client Integration
-
-### Claude Desktop
-1. Copy `clients/claude-desktop.json` to your Claude Desktop config
-2. Update `MORPH_API_KEY` in the config
-3. Restart Claude Desktop
-4. MCP servers appear in your tools
-
-### Cursor
-1. Copy `clients/cursor.json` to your Cursor MCP config
-2. Update `MORPH_API_KEY` in the config
-3. Restart Cursor
-4. Access MCP servers via the command palette
-
-### Supergateway
-The configs use [supergateway](https://github.com/supergateway/supergateway) to bridge:
-- **stdio** (what Claude/Cursor expect)
-- **SSE** (what Morph Cloud provides)
-
-## Snapshot Management
-
-### Metadata Tagging
-Snapshots are tagged for easy management:
-
-```json
-{
-  "role": "mcp-demo",
-  "epoch": "1",
-  "created_at": "2025-01-20T10:00:00Z"
-}
-```
-
-### Epoch Rotation
-To rotate epochs:
-1. **Stop instance** from current snapshot
-2. **Start instance** from new epoch snapshot
-3. **Update policy** in sidecar
-4. **Restart sidecar** with new configuration
-
-## Troubleshooting
-
-### Common Issues
-
-**"MORPH_API_KEY not set"**
-```bash
 export MORPH_API_KEY="your-api-key"
-```
-
-**"morphcloud SDK not found"**
-```bash
-pip install morphcloud
-```
-
-**"npx not available"**
-```bash
-# Install Node.js from https://nodejs.org/
-```
-
-**Instance not starting**
-```bash
-make status          # Check instance status
-make logs            # View sidecar logs
-```
-
-### Debug Mode
-Enable verbose logging:
-```bash
-# Set environment variable
-export MORPH_DEBUG=1
-
-# Run setup
 make setup
-```
-
-## Performance
-
-### Resource Usage
-- **VM Specs**: 2 vCPUs, 2GB RAM, 2GB disk
-- **Startup Time**: ~2-3 minutes (first time)
-- **Response Time**: <100ms (sidecar overhead)
-- **Concurrent Users**: 10+ (configurable)
-
-### Scaling
-- **Horizontal**: Add more MCP servers
-- **Vertical**: Increase VM resources
-- **Load Balancing**: Multiple sidecar instances
-
-## Contributing
-
-### Development Setup
-```bash
-# Clone and setup
-git clone https://github.com/SentinelOps-CI/mcp-sidecar-demo.git
-cd mcp-sidecar-demo
-
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
 make test
 ```
 
-### Architecture Decisions
-- **Go sidecar**: Performance and simplicity
-- **Python setup**: Rapid prototyping
-- **Morph Cloud**: Managed infrastructure
-- **Supergateway**: Proven SSE bridge
+End-to-end shortcut (install deps, setup, then smoke test):
+
+```bash
+make demo
+```
+
+Outputs:
+
+- `instance_info.json` — instance id and Morph base URLs  
+- `clients/cursor.json` and `clients/claude-desktop.json` — `supergateway` wiring for each route  
+
+---
+
+## HTTP surface (sidecar)
+
+Inside the VM the sidecar listens on port `8080`. Morph publishes each service at its own base URL; paths are appended to that base (see [smoke_test.py](smoke_test.py)).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness |
+| `GET` | `/ready` | Readiness |
+| `GET` | `/metrics` | Expvar metrics |
+| `GET` | `/mcp1/sse` | Filesystem MCP (via proxy) |
+| `GET` | `/mcp2/sse` | Git MCP |
+| `GET` | `/mcp3/sse` | HTTP MCP |
+
+### Quick manual checks
+
+After `make setup`, you can probe the first exposed base URL (see `instance_info.json`):
+
+```bash
+BASE="$(python -c "import json; print(json.load(open('instance_info.json'))['urls']['mcp1'])")"
+curl -fsS -H "Authorization: Bearer $MORPH_API_KEY" "$BASE/health"
+curl -fsS -H "Authorization: Bearer $MORPH_API_KEY" "$BASE/ready"
+```
+
+SSE endpoints may keep the connection open; interrupt with Ctrl+C when you are done.
+
+---
+
+## Security and policy
+
+- Edge: Morph `auth_mode="api_key"` on exposed HTTP services.  
+- Sidecar (optional): bearer checks via `auth.*` in [sidecar/config.yaml](sidecar/config.yaml).  
+- Authorization: `default` role, epochs, tools, and `call` permission in [sidecar/policy.yaml](sidecar/policy.yaml).  
+- Audit: JSONL on the VM at `/opt/sidecar/permits.jsonl`; bearer material is never written verbatim.  
+
+Config path: set `SIDECAR_CONFIG` (for example `/opt/sidecar/config.yaml` on the VM), otherwise `./config.yaml` from the process working directory.
+
+---
+
+## Startup guarantees
+
+The sidecar exits on invalid config or policy instead of running in an undefined state. Examples include missing `policy.file`, bad durations, bad upstream URLs, invalid RFC3339 epoch expiry, a missing `default` role, or epoch names that do not exist.
+
+If `policy.reload_interval` is set, policy is reloaded on that schedule without restarting the process.
+
+---
+
+## Develop and verify
+
+```bash
+make ci
+```
+
+Runs Ruff, mypy on selected modules, pytest, and `go test` under `sidecar/`. Optional race detection (toolchain-dependent):
+
+```bash
+make race
+```
+
+---
+
+## Day-two commands
+
+```bash
+make status
+make logs
+make epoch-rotate
+make clean
+```
+
+`make logs` uses your saved instance id and Morph credentials to print recent sidecar and permit log tails.
+
+---
+
+## Requirements
+
+| Component | Version |
+|-----------|---------|
+| Python | 3.9+ (CI uses 3.11) |
+| Go | 1.21+ (`sidecar/`) |
+| Node.js | 18+ (`npx`, client configs) |
+| Morph | Account with `MORPH_API_KEY` for provision and integration tests |
+
+On Windows, use Git Bash, WSL, or another environment that provides `make` and a POSIX shell, or invoke the same Python entrypoints as in the [Makefile](Makefile).
+
+---
+
+## Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| Setup or tests say API key missing | `export MORPH_API_KEY=...` and retry |
+| Go build or test failures | `cd sidecar && go test ./...` |
+| Odd runtime behavior | `make logs`, then re-read [sidecar/config.yaml](sidecar/config.yaml) and [sidecar/policy.yaml](sidecar/policy.yaml) |
+| `make` not available | Install a Make implementation or run the commands from the [Makefile](Makefile) manually |
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **Morph Labs** for the amazing cloud platform
-- **MCP Community** for the protocol specification
-- **Supergateway** for the SSE bridge implementation
-
-
-*Questions? Issues? [Open an issue](https://github.com/SentinelOps-CI/mcp-sidecar-demo/issues)*
+Released under the MIT License. See [LICENSE](LICENSE).
